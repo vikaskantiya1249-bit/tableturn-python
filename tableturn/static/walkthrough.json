@@ -1,0 +1,1048 @@
+{
+ "project": "A restaurant waitlist: parties quoted a wait, seated by size, tables turning over all evening.",
+ "level": "TableTurn",
+ "steps": [
+  {
+   "id": "B-01",
+   "title": "The floor, as something you can look at",
+   "scene": "Kothari's has twenty-two tables across three sections. The only place that knows which are free is a wipe-clean board behind the host stand, and it is wrong for about ten minutes after every departure.",
+   "build": "Load tables, sizes and sections once at start-up from a settings object, and serve a floor that can be filtered by section and by state — where free is derived from what is seated at the table, never stored as a flag somebody has to remember to clear.",
+   "follows": "Nothing can be quoted, seated or cleared until the floor exists.",
+   "story": {
+    "as": "host",
+    "want": "see every table with its size, section and whether it is occupied",
+    "so": "I can find a table without walking the floor"
+   },
+   "summary": "The app starts with 22 tables in three sections loaded once, and answers a floor filterable by section and state.",
+   "endpoints": [
+    {
+     "m": "GET",
+     "p": "/branches/{branch}/tables",
+     "q": "section=Window|Garden|Indoor (optional) · state=free|seated|uncleared (optional)",
+     "req": null,
+     "res": {
+      "branch": "Baner",
+      "free": 17,
+      "tables": [
+       {
+        "no": "T01",
+        "seats": 2,
+        "section": "Window",
+        "state": "free"
+       },
+       {
+        "no": "T11",
+        "seats": 4,
+        "section": "Garden",
+        "state": "seated",
+        "party_id": "W029",
+        "seated_minutes": 42
+       }
+      ]
+     },
+     "codes": [
+      [
+       "200",
+       "",
+       "always, possibly an empty list"
+      ],
+      [
+       "400",
+       "",
+       "unknown `section` or `state` — /errors/validation"
+      ],
+      [
+       "404",
+       "",
+       "unknown branch — /errors/no-such-branch"
+      ]
+     ]
+    },
+    {
+     "m": "GET",
+     "p": "/branches/{branch}/tables/{no}",
+     "q": null,
+     "req": null,
+     "res": {
+      "no": "T11",
+      "seats": 4,
+      "section": "Garden",
+      "state": "seated",
+      "party_id": "W029",
+      "seated_minutes": 42
+     },
+     "codes": [
+      [
+       "200",
+       "",
+       "the table exists"
+      ],
+      [
+       "404",
+       "/errors/no-such-table",
+       "no such table in this branch"
+      ]
+     ]
+    }
+   ],
+   "data": [
+    "branches(id, code, name) — one row, 'Baner'",
+    "tables(id, branch_id, no, seats 2|4|6, section, current_seating_id nullable, cleared_at nullable) — 10 two-tops, 8 four-tops, 4 six-tops",
+    "seed file seed/tables.csv read once at start-up"
+   ],
+   "rules": [
+    "State is derived on read from the table's current seating: `seated` while that seating has no left_at; `uncleared` once the party has left and nobody has cleared the table (the seating stays current until the clear); `free` when no seating is current. No stored state flag.",
+    "Seeding runs before the first request and is idempotent — a second start does not duplicate tables.",
+    "Settings (database path, host, port, default quote minutes) come from one settings object; nothing hard-coded.",
+    "Filter values outside the enum are 400, not an empty list.",
+    "Filters are typed query parameters bound to enums; every response goes through a declared response model (no bare dicts)."
+   ],
+   "ac_user": [
+    [
+     "the app has just started",
+     "Meera opens the floor",
+     "she sees 22 tables — ten twos, eight fours, four sixes — every one free"
+    ],
+    [
+     "the floor is open",
+     "she filters to Garden",
+     "she sees only Garden tables and the count of free ones"
+    ],
+    [
+     "the app restarts",
+     "she opens the floor",
+     "22 tables, not 44"
+    ]
+   ],
+   "ac_api": [
+    [
+     "a fresh database",
+     "the app starts twice",
+     "tables has 22 rows after both starts"
+    ],
+    [
+     "22 tables",
+     "GET /branches/Baner/tables",
+     "200 with 22 items and free = 22"
+    ],
+    [
+     "a seated table",
+     "GET ?state=seated",
+     "only that table, with party_id and seated_minutes"
+    ],
+    [
+     "any request",
+     "GET ?section=Roof",
+     "400 /errors/validation"
+    ],
+    [
+     "any request",
+     "GET /branches/Baner/tables/T99",
+     "404 /errors/no-such-table"
+    ]
+   ],
+   "done": [
+    "Both endpoints, both filters, both refusals.",
+    "Idempotent seeding covered by a test that starts twice.",
+    "No stored state column on tables.",
+    "The floor screen renders from these endpoints only."
+   ],
+   "try": {
+    "screen": "floor",
+    "do": "Use the section and state selects. Count the tables: ten two-tops, eight four-tops, four six-tops. Then open `/branches/Baner/tables?section=Roof` in the browser.",
+    "see": "22 tables, every one free; the count line (shown · free, counted over the filtered tables) and the filters come from GET /branches/Baner/tables with query parameters. `section=Roof` is a 400 validation with `errors[]`, not an empty list. There is no `state` column anywhere — a table is seated when a seating is open on it, uncleared when the party has left and nobody has wiped it, free otherwise."
+   }
+  },
+  {
+   "id": "B-02",
+   "title": "A party joins the list",
+   "scene": "The Kulkarnis arrive: six people, one name, no reservation. Meera writes 'Kulkarni 6' on the board and hopes she can read it in an hour.",
+   "build": "A waitlist endpoint taking party size and a name through a request model with real constraints, answering 201 — and separating a malformed request (422) from a party size no table in the restaurant could ever seat (400).",
+   "follows": "The floor is readable; this is the first thing that changes it, so validation belongs here.",
+   "story": {
+    "as": "host",
+    "want": "add a party to the waitlist by size and name",
+    "so": "the list survives the evening better than a marker pen does"
+   },
+   "summary": "A party joins the waitlist by name and covers and gets an id back; a size no table could seat is refused differently from a malformed body.",
+   "endpoints": [
+    {
+     "m": "POST",
+     "p": "/waitlist",
+     "q": null,
+     "req": {
+      "name": "Kulkarni",
+      "covers": 6,
+      "phone": "+919876543210"
+     },
+     "res": {
+      "party_id": "W031",
+      "name": "Kulkarni",
+      "covers": 6,
+      "position": 4,
+      "joined_at": "2026-09-27T19:10:00Z"
+     },
+     "codes": [
+      [
+       "201",
+       "",
+       "on the list; `Location: /parties/W031`"
+      ],
+      [
+       "422",
+       "/errors/validation",
+       "the body fails validation; `errors[]` names each field"
+      ],
+      [
+       "400",
+       "/errors/party-too-big",
+       "no table in this branch could ever seat that many; `max_covers` says the largest"
+      ]
+     ]
+    },
+    {
+     "m": "GET",
+     "p": "/parties/{party_id}",
+     "q": null,
+     "req": null,
+     "res": {
+      "party_id": "W031",
+      "name": "Kulkarni",
+      "covers": 6,
+      "state": "waiting",
+      "position": 4,
+      "joined_at": "2026-09-27T19:10:00Z"
+     },
+     "codes": [
+      [
+       "200",
+       "",
+       "the party exists"
+      ],
+      [
+       "404",
+       "/errors/no-such-party",
+       "the party is not on this branch's list"
+      ]
+     ]
+    }
+   ],
+   "data": [
+    "parties(id, branch_id, name, covers, phone, state waiting|seated|left|cleared, joined_at, position)"
+   ],
+   "rules": [
+    "`name` 1–60 chars, `covers` integer 1–20, `phone` optional E.164 — violations are the validation status with `errors[]`.",
+    "`covers` larger than the largest table in the branch (6) is a valid body but an impossible request: 400 /errors/party-too-big with `max_covers`.",
+    "`position` is 1 + the number of parties currently waiting in this branch, computed at insert.",
+    "The request model uses `Field` constraints; a body that fails them is 422, a body that passes but asks for something impossible is 400 — two different types, tested separately."
+   ],
+   "ac_user": [
+    [
+     "the Kulkarnis arrive, six people",
+     "Meera adds them",
+     "they get a number and a place in the queue"
+    ],
+    [
+     "a party of nine",
+     "Meera adds them",
+     "she is told nothing here seats nine, and the largest table is six"
+    ],
+    [
+     "Meera leaves the name blank",
+     "she submits",
+     "the form tells her which field is wrong"
+    ]
+   ],
+   "ac_api": [
+    [
+     "a valid body",
+     "POST /waitlist",
+     "201 with party_id, position and a Location header; the row is state waiting"
+    ],
+    [
+     "covers 9",
+     "POST /waitlist",
+     "400 /errors/party-too-big with max_covers 6, no row written"
+    ],
+    [
+     "covers 0 or name ''",
+     "POST /waitlist",
+     "422 with errors[] naming the field"
+    ]
+   ],
+   "done": [
+    "Endpoint with all three responses; the party row is written; validation and impossible-size are separate types with tests."
+   ],
+   "try": {
+    "screen": "waitlist",
+    "do": "Add the Kulkarnis, six covers. Then add a party of nine. Then submit with the name blank.",
+    "see": "W001 at position 1 with a `Location: /parties/W001` header. Nine is a valid body but an impossible request: 400 party-too-big with `max_covers: 6` and no row written. A blank name is 422 validation naming the field — two different refusals on purpose."
+   }
+  },
+  {
+   "id": "B-03",
+   "title": "The wait you quote, and the wait they actually have",
+   "scene": "Meera says forty minutes. It is the number that decides whether the Kulkarnis stay or walk. Nobody has ever checked it against what happened.",
+   "build": "Quote a wait when the party joins, and measure the real one against an injected clock — so both numbers are stored on the entry and a test can move time instead of waiting for it.",
+   "follows": "A party is on the list. The quote is the promise this whole project is judged on, and the injected clock is what makes every time rule testable.",
+   "story": {
+    "as": "guest",
+    "want": "be quoted a wait when I join the list, and have the real one recorded",
+    "so": "I can decide whether to stay, and the restaurant can check whether the quote was honest"
+   },
+   "summary": "Every party is quoted a wait when they join and the real wait is measured at seating, both from an injected clock.",
+   "endpoints": [
+    {
+     "m": "POST",
+     "p": "/waitlist",
+     "q": null,
+     "req": null,
+     "res": {
+      "party_id": "W031",
+      "name": "Kulkarni",
+      "covers": 6,
+      "position": 4,
+      "joined_at": "2026-09-27T19:10:00Z",
+      "quoted_minutes": 40,
+      "quoted_at": "2026-09-27T19:10:00Z"
+     },
+     "codes": [
+      [
+       "201",
+       "",
+       "as before, now with `quoted_minutes` and `quoted_at`"
+      ]
+     ]
+    },
+    {
+     "m": "GET",
+     "p": "/parties/{party_id}",
+     "q": null,
+     "req": null,
+     "res": {
+      "party_id": "W031",
+      "name": "Kulkarni",
+      "covers": 6,
+      "state": "seated",
+      "position": 4,
+      "joined_at": "2026-09-27T19:10:00Z",
+      "quoted_minutes": 40,
+      "quoted_at": "2026-09-27T19:10:00Z",
+      "waited_minutes": 47,
+      "table": "T20"
+     },
+     "codes": [
+      [
+       "200",
+       "",
+       "the party exists"
+      ],
+      [
+       "404",
+       "/errors/no-such-party",
+       "the party is not on this branch's list"
+      ]
+     ]
+    }
+   ],
+   "data": [
+    "parties gains quoted_minutes, quoted_at, waited_minutes nullable; settings DEFAULT_QUOTE_MINUTES (40)"
+   ],
+   "rules": [
+    "Here the quote is DEFAULT_QUOTE_MINUTES; it is stored on the party with the clock's `now`.",
+    "`waited_minutes` = seated_at − joined_at, rounded down, computed from the injected clock at seating and stored — never recomputed on read.",
+    "The clock is a dependency (`Depends(get_clock)`) overridable in tests.",
+    "Both the database session and the clock are `Depends` dependencies, so a test overrides either without touching the route."
+   ],
+   "ac_user": [
+    [
+     "the Kulkarnis join",
+     "Meera looks at their entry",
+     "it shows the wait they were told"
+    ],
+    [
+     "they are seated 47 minutes later",
+     "Ravi opens the entry",
+     "he sees both numbers side by side"
+    ]
+   ],
+   "ac_api": [
+    [
+     "POST /waitlist",
+     "any party",
+     "201 with quoted_minutes equal to the setting and quoted_at equal to the fixed clock"
+    ],
+    [
+     "the clock moved 47 minutes then the party is seated",
+     "GET /parties/W031",
+     "waited_minutes 47"
+    ],
+    [
+     "a later read after the clock moves again",
+     "GET /parties/W031",
+     "waited_minutes still 47"
+    ]
+   ],
+   "done": [
+    "Quote stored at join; real wait stored at seating; both under a fixed clock in tests."
+   ],
+   "try": {
+    "screen": "waitlist",
+    "do": "Add a party and read the green panel; click its id to open the party. (The real wait needs time to pass — the tests move the clock 47 minutes and seat them.)",
+    "see": "`quoted 40 min` stamped at join from the settings and the clock. When the party is seated, `waited_minutes` is stamped once from the same clock and never recomputed: the party card reads 'quoted 40 min · waited 47 min' however late you open it. The clock is a `Depends`, so a test overrides it without touching a route."
+   }
+  },
+  {
+   "id": "B-04",
+   "title": "Three ways to say no",
+   "scene": "A new host tries to seat the Kulkarnis at a four-top, then tries to seat a party that is already eating, then tries to seat anyone at table 12, which Joseph has not cleared.",
+   "build": "Three refusals with three codes: a table too small for the party, a party already seated, a table not yet cleared — raised from a service function rather than from inside the route.",
+   "follows": "The happy path is built. What a host may not do is the real content of a floor system, and these three become the first rows of its rule table.",
+   "story": {
+    "as": "host",
+    "want": "be refused when I seat a party at a table too small, twice, or at an uncleared one",
+    "so": "a mistake at the stand is caught before the guests are walked over"
+   },
+   "summary": "Seating a party can be refused three ways, each with its own type and status, raised from the service and mapped once.",
+   "endpoints": [
+    {
+     "m": "POST",
+     "p": "/seatings",
+     "q": null,
+     "req": {
+      "party_id": "W031",
+      "table": "T11"
+     },
+     "res": {
+      "seating_id": "S204",
+      "party_id": "W031",
+      "table": "T20",
+      "seated_at": "2026-09-27T19:57:00Z",
+      "waited_minutes": 47
+     },
+     "codes": [
+      [
+       "201",
+       "",
+       "seated"
+      ],
+      [
+       "409",
+       "/errors/table-too-small",
+       "the table has fewer seats than the party has covers"
+      ],
+      [
+       "409",
+       "/errors/already-seated",
+       "the party is already at a table"
+      ],
+      [
+       "409",
+       "/errors/table-not-cleared",
+       "the last party has left but the table has not been cleared"
+      ],
+      [
+       "404",
+       "/errors/no-such-party",
+       "the party is not on this branch's list"
+      ],
+      [
+       "404",
+       "/errors/no-such-table",
+       "no such table in this branch"
+      ]
+     ]
+    }
+   ],
+   "data": [
+    "seatings(id, branch_id, party_id, table_id, seated_at, left_at nullable, cleared_at nullable, turn_minutes nullable)"
+   ],
+   "rules": [
+    "Domain refusals are exceptions raised in the service (TableTooSmall, AlreadySeated, TableNotCleared) — never HTTP responses built in a route.",
+    "One exception handler maps each to status + type; the mapping table is the single source of truth.",
+    "Order of checks: party exists → table exists → party not already seated → table cleared → table fits. The first failure wins, so a test can target each.",
+    "The exception → status mapping lives in one `exception_handler` registration; routes never build error responses."
+   ],
+   "ac_user": [
+    [
+     "Kulkarnis (6) and a four-top",
+     "the host seats them there",
+     "refused: the table is too small"
+    ],
+    [
+     "a party already eating",
+     "the host seats them again",
+     "refused: already seated"
+    ],
+    [
+     "table 12 not yet cleared",
+     "the host seats anyone there",
+     "refused: not cleared"
+    ]
+   ],
+   "ac_api": [
+    [
+     "covers 6, table seats 4",
+     "POST /seatings",
+     "409 /errors/table-too-small"
+    ],
+    [
+     "party state seated",
+     "POST /seatings",
+     "409 /errors/already-seated"
+    ],
+    [
+     "table with left_at set and cleared_at null",
+     "POST /seatings",
+     "409 /errors/table-not-cleared"
+    ],
+    [
+     "any domain exception",
+     "it reaches the handler",
+     "body has exactly type, title, status, detail and named fields; no stack trace"
+    ]
+   ],
+   "done": [
+    "Three refusals from the service, one handler, a test per refusal, no `HTTPException`/`ResponseStatusException` for domain rules in routes."
+   ],
+   "try": {
+    "screen": "rules",
+    "do": "Read 'When the floor says no'. Then on the floor click T11 and seat a party of six there; seat an already seated party at a free table; and seat someone at a table whose party has left but which nobody cleared.",
+    "see": "409 table-too-small, 409 already-seated, 409 table-not-cleared — each its own type, raised from `services/seatings.py` and mapped by one handler; the wire panel shows the last refusal. The checks run in a fixed order (party, table, already seated, cleared, fits) so each refusal can be reached on its own. No route builds an error response."
+   }
+  },
+  {
+   "id": "B-05",
+   "title": "The table turns",
+   "scene": "The Kulkarnis leave at 9:20. Joseph clears the table at 9:26. Ravi's question is how long the table was theirs, because that is what turn time means.",
+   "build": "Clearing a seating stamps how long the party sat, frees the table, and does both in one transaction — so the floor never shows a table free while a seating is still open on it.",
+   "follows": "The clock is started; this is the only ticket that stops it. Until now the floor fills and never empties.",
+   "story": {
+    "as": "manager",
+    "want": "have clearing a table record how long the party sat and free the table",
+    "so": "turn time is measured rather than estimated at the end of the night"
+   },
+   "summary": "A party leaves and the server clears the table: turn time is stamped and the table freed, in one transaction.",
+   "endpoints": [
+    {
+     "m": "POST",
+     "p": "/seatings/{seating_id}/leave",
+     "q": null,
+     "req": null,
+     "res": {
+      "seating_id": "S204",
+      "left_at": "2026-09-27T21:20:00Z"
+     },
+     "codes": [
+      [
+       "200",
+       "",
+       "the party has left; the table is now `uncleared`"
+      ],
+      [
+       "409",
+       "/errors/already-left",
+       ""
+      ],
+      [
+       "404",
+       "/errors/no-such-seating",
+       ""
+      ]
+     ]
+    },
+    {
+     "m": "POST",
+     "p": "/seatings/{seating_id}/clear",
+     "q": null,
+     "req": null,
+     "res": {
+      "seating_id": "S204",
+      "table": "T20",
+      "turn_minutes": 83,
+      "cleared_at": "2026-09-27T21:26:00Z"
+     },
+     "codes": [
+      [
+       "200",
+       "",
+       "cleared; the table is free"
+      ],
+      [
+       "409",
+       "/errors/not-left-yet",
+       "clear comes after leave"
+      ],
+      [
+       "409",
+       "/errors/already-cleared",
+       ""
+      ],
+      [
+       "404",
+       "/errors/no-such-seating",
+       ""
+      ]
+     ]
+    }
+   ],
+   "data": [
+    "seatings.left_at, cleared_at, turn_minutes (left_at − seated_at); tables.current_seating_id cleared and tables.cleared_at set on clear; parties.state → left then cleared"
+   ],
+   "rules": [
+    "Turn time is seated_at → left_at (what the table earned), not → cleared_at (what the server took).",
+    "Clear updates the seating, the table and the party in one transaction; the floor can never show a free table with an open seating.",
+    "Leave and clear are each idempotent by refusal: a second call is 409, not a second stamp.",
+    "The close is one session transaction: all writes or none; the test injects a failure after the first write and asserts nothing persisted."
+   ],
+   "ac_user": [
+    [
+     "the Kulkarnis leave at 9:20",
+     "Joseph taps Leave",
+     "the table shows uncleared"
+    ],
+    [
+     "Joseph wipes it at 9:26",
+     "he taps Clear",
+     "the table is free and Ravi sees the table was theirs for 83 minutes, not 89"
+    ]
+   ],
+   "ac_api": [
+    [
+     "an open seating",
+     "POST /leave then /clear with the clock moved",
+     "turn_minutes equals left_at − seated_at; table current_seating_id null"
+    ],
+    [
+     "a failure injected after the seating update",
+     "POST /clear",
+     "rolled back: seating still open, the table still uncleared, the party still left"
+    ],
+    [
+     "a cleared seating",
+     "POST /clear again",
+     "409 /errors/already-cleared"
+    ]
+   ],
+   "done": [
+    "Both endpoints, atomic clear, turn stamped, idempotent by refusal, tested."
+   ],
+   "try": {
+    "screen": "floor",
+    "do": "Click a seated table and press Leave; click it again (now grey) and press Clear. Then open the party from the table.",
+    "see": "After Leave the table shows uncleared — not free — because Joseph has not wiped it. After Clear the table is free and the answer carries `turn_minutes`: seated → left, what the table earned, not seated → cleared; the party card shows 'turn N min'. Seating, table and party change in one transaction; a second Leave or Clear is a 409, never a second stamp."
+   }
+  },
+  {
+   "id": "B-06",
+   "title": "A board nobody can wipe",
+   "scene": "Ravi asks why a party that arrived at 7:10 was seated after one that arrived at 7:40. The board was wiped at nine.",
+   "build": "An append-only log: one row per transition — quoted, seated, cleared — written in the same transaction as the change, never updated and never deleted.",
+   "follows": "A party's evening is now complete; this is what remembers it, and the log that proves nobody was overtaken.",
+   "story": {
+    "as": "manager",
+    "want": "see every quote, seating and clear in a record nobody can wipe",
+    "so": "I can answer why one party was seated before another"
+   },
+   "summary": "Every transition is written to an append-only log in the same transaction, readable per party.",
+   "endpoints": [
+    {
+     "m": "GET",
+     "p": "/parties/{party_id}",
+     "q": null,
+     "req": null,
+     "res": {
+      "party_id": "W031",
+      "name": "Kulkarni",
+      "covers": 6,
+      "state": "cleared",
+      "position": 4,
+      "joined_at": "2026-09-27T19:10:00Z",
+      "quoted_minutes": 40,
+      "quoted_at": "2026-09-27T19:10:00Z",
+      "waited_minutes": 47,
+      "table": "T20",
+      "events": [
+       {
+        "at": "2026-09-27T19:10:00Z",
+        "kind": "joined",
+        "covers": 6
+       },
+       {
+        "at": "2026-09-27T19:10:00Z",
+        "kind": "quoted",
+        "quoted_minutes": 40
+       },
+       {
+        "at": "2026-09-27T19:57:00Z",
+        "kind": "seated",
+        "table": "T20",
+        "waited_minutes": 47
+       },
+       {
+        "at": "2026-09-27T21:20:00Z",
+        "kind": "left"
+       },
+       {
+        "at": "2026-09-27T21:26:00Z",
+        "kind": "cleared",
+        "turn_minutes": 83
+       }
+      ]
+     },
+     "codes": [
+      [
+       "200",
+       "",
+       "the party exists, events in `at` order"
+      ],
+      [
+       "404",
+       "/errors/no-such-party",
+       "the party is not on this branch's list"
+      ]
+     ]
+    }
+   ],
+   "data": [
+    "events(id, branch_id, party_id, seating_id nullable, kind joined|quoted|seated|left|cleared|dropped|paged|billed, at, data json) — insert only",
+    "no UPDATE/DELETE against events — enforced by a database rule or a repository with no update method, and a test that proves it"
+   ],
+   "rules": [
+    "Written inside the same transaction as the change it records; a rolled-back seating leaves no `seated` event.",
+    "Events carry ids and facts, never the guest's phone number.",
+    "The party's `events` are the only history the UI shows.",
+    "Event rows are inserted with a plain INSERT in the same session transaction as the change; the events model has no update path."
+   ],
+   "ac_user": [
+    [
+     "Ravi asks why 7:10 was seated after 7:40",
+     "he opens both parties",
+     "the timelines show exactly when each joined and was seated — nothing was wiped"
+    ]
+   ],
+   "ac_api": [
+    [
+     "a seating",
+     "commits",
+     "exactly one `seated` event with table and waited_minutes"
+    ],
+    [
+     "a seating that fails",
+     "rolls back",
+     "no event"
+    ],
+    [
+     "any event row",
+     "UPDATE or DELETE attempted",
+     "refused"
+    ],
+    [
+     "a party with a phone",
+     "read its events",
+     "no event data contains the number"
+    ]
+   ],
+   "done": [
+    "Every transition writes an event in-transaction; immutability enforced and tested; GET returns ordered events."
+   ],
+   "try": {
+    "screen": "party",
+    "do": "Open a party that has been seated, left and cleared.",
+    "see": "The timeline: joined, quoted, seated, left, cleared — one row per transition, written in the same transaction as the change, in `at` order. The database refuses any UPDATE or DELETE on it. No event carries the guest's phone number."
+   }
+  },
+  {
+   "id": "B-07",
+   "title": "One file becomes an app",
+   "scene": "Ravi wants the floor on a screen in the kitchen, and a developer he knows offers to build it if there is an API worth reading.",
+   "build": "Routers for the floor, the waitlist, seatings and parties; one exception handler so every refusal has the same shape; tags, summaries and documented errors, so /docs is something that developer could work from.",
+   "follows": "The rules so far have accumulated in one module. The problem+json shape is settled here.",
+   "story": {
+    "as": "kitchen screen developer",
+    "want": "read one set of API docs where every refusal has the same shape",
+    "so": "the screen can be built without guessing what an error means"
+   },
+   "summary": "Routers for floor, waitlist, seatings and parties, one error shape, and docs the kitchen-screen developer can build against.",
+   "endpoints": [
+    {
+     "m": "GET",
+     "p": "/docs",
+     "q": null,
+     "req": null,
+     "res": null,
+     "codes": [
+      [
+       "200",
+       "",
+       "every endpoint with summary, tag (tables, waitlist, seatings, parties) and documented error responses"
+      ]
+     ]
+    },
+    {
+     "m": "GET",
+     "p": "/openapi.json",
+     "q": null,
+     "req": null,
+     "res": null,
+     "codes": [
+      [
+       "200",
+       "",
+       "every 4xx in the codes tables appears on the endpoint that can return it"
+      ]
+     ]
+    }
+   ],
+   "data": [
+    "no new tables"
+   ],
+   "rules": [
+    "Routers: tables, waitlist, seatings, parties under `tableturn/routers/`; services and rules hold no FastAPI imports.",
+    "One handler produces every error body including validation and unexpected exceptions (500, generic detail, request id, no trace).",
+    "Every endpoint declares its error responses with an example body.",
+    "`APIRouter` per resource, mounted from one `app.py`; services and rules import nothing from FastAPI."
+   ],
+   "ac_user": [
+    [
+     "the kitchen-screen developer",
+     "opens the docs",
+     "she can see every call and every way it refuses, with examples"
+    ]
+   ],
+   "ac_api": [
+    [
+     "the spec",
+     "inspect POST /seatings",
+     "409 table-too-small, already-seated, table-not-cleared and 404s are documented with problem+json examples"
+    ],
+    [
+     "an unexpected exception",
+     "any request",
+     "500 problem+json, type `/errors/internal`, generic detail, no stack trace"
+    ]
+   ],
+   "done": [
+    "Modular layout; docs list errors per endpoint; one handler; no route builds its own error."
+   ],
+   "try": {
+    "screen": "api",
+    "do": "Press Send on any endpoint, then open /docs and expand POST /seatings.",
+    "see": "Every endpoint from the live OpenAPI spec with every refusal it documents, each with an example body. Routers per resource (tables, waitlist, seatings, parties), services with no FastAPI import, one handler for every error shape — including a 500 with a request id and no stack trace."
+   }
+  },
+  {
+   "id": "B-08",
+   "title": "The rule table, and then the rule changes",
+   "scene": "Ravi decides a party of two may take a four-top — but only when nobody larger is waiting. It sounds small. It touches seating, the quote and fairness at once.",
+   "build": "A parametrised table of every refusal the floor can give, run through the test client with the clock overridden — then add the four-top rule and watch which rows move.",
+   "follows": "The refusals exist and time can be moved, so a rule can now be changed with evidence.",
+   "story": {
+    "as": "manager",
+    "want": "let a two-top take a four-top only when nobody bigger is waiting, and see what moved",
+    "so": "a seating change does not quietly break fairness"
+   },
+   "summary": "A parametrised rule table covers every refusal, and the 'two may take a four-top' rule is added with only its rows moving.",
+   "endpoints": [
+    {
+     "m": "GET",
+     "p": "/settings",
+     "q": null,
+     "req": null,
+     "res": {
+      "default_quote_minutes": 40,
+      "small_party_upgrade": "when_nobody_larger_waits",
+      "max_covers": 6
+     },
+     "codes": [
+      [
+       "200",
+       "",
+       "read-only"
+      ]
+     ]
+    }
+   ],
+   "data": [
+    "settings gains SMALL_PARTY_UPGRADE = never | when_nobody_larger_waits | always"
+   ],
+   "rules": [
+    "The table: one row per case — fits / too small / already seated / not cleared / party too big / malformed / two at a four-top with nobody larger waiting / two at a four-top with a four waiting. Each row: given, action, expected status, type.",
+    "Upgrade rule: a party may be seated at a table with more seats than covers only if no waiting party with more covers than this one could be seated at that table. (`never` and `always` are the other two settings.)",
+    "When the setting does not allow a party at a table with more seats than covers, POST /seatings answers 409 /errors/overtaking; when the reason is a larger party waiting (`when_nobody_larger_waits`), `must_seat_first` names that party.",
+    "`pytest.mark.parametrize` from a list or CSV; clock via `dependency_overrides`.",
+    "Switching SMALL_PARTY_UPGRADE changes exactly the two upgrade rows.",
+    "The table is one `@pytest.mark.parametrize` over `TestClient` with `dependency_overrides` for the clock; the rule change is a settings override in the same test module."
+   ],
+   "ac_user": [
+    [
+     "nobody larger waiting",
+     "Meera seats a two at a four-top",
+     "allowed"
+    ],
+    [
+     "the Kulkarnis (6) waiting for the only six-top... and a four waiting",
+     "she seats a two at a four-top",
+     "refused — the four goes first"
+    ]
+   ],
+   "ac_api": [
+    [
+     "the table",
+     "runs",
+     "every refusal type appears in at least one row; all pass"
+    ],
+    [
+     "SMALL_PARTY_UPGRADE=never",
+     "the table runs",
+     "only the two upgrade rows change outcome"
+    ],
+    [
+     "GET /settings",
+     "any time",
+     "200 with the live values"
+    ]
+   ],
+   "done": [
+    "Table exists, parametrised, all rows covered; upgrade rule implemented and its rows isolated; GET /settings."
+   ],
+   "try": {
+    "screen": "rules",
+    "do": "Switch 'a smaller party may take a larger table' between the three settings and watch the rule table.",
+    "see": "Exactly the two rows tagged `upgrade` move. Under the default a two takes a four-top only when no waiting party with more covers would fit it — otherwise 409 overtaking naming who must be seated first. These are the rows tests/rules.csv runs under all three settings with the clock overridden; GET /settings shows the live values."
+   }
+  },
+  {
+   "id": "B-09",
+   "title": "It runs on the machine by the till",
+   "scene": "Ravi has a small PC by the till that runs the billing software. He is not installing Python on it.",
+   "build": "A Dockerfile for the app, an image built and run with a mapped port, and HOST=0.0.0.0 so the kitchen screen can reach it.",
+   "follows": "The app is finished and tested; this is the first day it leaves your laptop.",
+   "story": {
+    "as": "manager",
+    "want": "run the floor from a single image on the machine by the till",
+    "so": "I do not need a developer to start it"
+   },
+   "summary": "The app builds into an image and runs in a container on the PC by the till, reachable from the kitchen screen.",
+   "endpoints": [
+    {
+     "m": "GET",
+     "p": "/healthz",
+     "q": null,
+     "req": null,
+     "res": {
+      "status": "ok"
+     },
+     "codes": [
+      [
+       "200",
+       "",
+       "up and can reach its database"
+      ]
+     ]
+    }
+   ],
+   "data": [
+    "no new tables"
+   ],
+   "rules": [
+    "Dockerfile: `python:3.12-slim`, dependencies from a lock file, `HOST=0.0.0.0`, `PORT=8080`, `CMD uvicorn tableturn.app:app --host 0.0.0.0 --port 8080`.",
+    "`docker build -t tableturn .` and `docker run -p 8080:8080 tableturn` are the only commands; README shows them.",
+    "The kitchen screen (another machine) reaches the floor on the till PC's IP:8080."
+   ],
+   "ac_user": [
+    [
+     "Ravi, no Python or Java installed",
+     "runs the two commands",
+     "the floor opens on the kitchen screen"
+    ]
+   ],
+   "ac_api": [
+    [
+     "a clean machine with Docker",
+     "build",
+     "succeeds"
+    ],
+    [
+     "container running",
+     "curl health from another host",
+     "200"
+    ],
+    [
+     "container running",
+     "GET /branches/Baner/tables from another host",
+     "200 with 22 tables"
+    ]
+   ],
+   "done": [
+    "Image builds; serves on the mapped port from another machine; README has both commands."
+   ],
+   "try": {
+    "screen": "runtime",
+    "do": "Read the health line, then build and run your Dockerfile with the docker commands under 'How it runs'.",
+    "see": "Health is green only when the app answered and reached its database. The same floor answers on port 8080 from a container bound to 0.0.0.0 — reachable from the kitchen screen on the till PC's IP, with no Python installed on it."
+   }
+  },
+  {
+   "id": "B-10",
+   "title": "It survives the nightly power cut",
+   "scene": "The power goes at 10:40 on a Saturday. The waitlist, and everyone's quoted times, are gone.",
+   "build": "A volume for the data, configuration through an env-file instead of baked into the image, a .dockerignore, logs to stdout — and the README that walks one party from the door to the bill.",
+   "follows": "The image ran once; this makes it something Ravi can be handed.",
+   "story": {
+    "as": "manager",
+    "want": "survive the nightly power cut without losing the waitlist",
+    "so": "nineteen people at the door do not lose their place"
+   },
+   "summary": "Data survives `docker rm`, configuration comes from an env-file, logs go to stdout, and the README walks one party door-to-bill.",
+   "endpoints": [],
+   "data": [
+    "SQLite on a named volume at /data; DATABASE_URL=sqlite:////data/tableturn.db",
+    ".dockerignore excludes tests, .git, local databases, virtualenvs / build output"
+   ],
+   "rules": [
+    "Every setting (database path, DEFAULT_QUOTE_MINUTES, SMALL_PARTY_UPGRADE, HOST, PORT) via `--env-file`; nothing baked in.",
+    "Logs to stdout/stderr, one line per event; no file inside the container.",
+    "README: build, run with volume + env-file, and the exact curl calls for join → quote → seat → leave → clear.",
+    "Settings are read by pydantic-settings from the environment; the env-file is the only configuration input."
+   ],
+   "ac_user": [
+    [
+     "the power cuts at 10:40",
+     "the PC comes back",
+     "every party and their quoted time are still on the list"
+    ],
+    [
+     "Ravi wants a 30-minute default quote",
+     "he edits one line and restarts",
+     "no rebuild"
+    ]
+   ],
+   "ac_api": [
+    [
+     "parties on the list",
+     "docker rm + run with the same volume",
+     "GET /parties/{id} still 200"
+    ],
+    [
+     "DEFAULT_QUOTE_MINUTES=30 in env-file",
+     "start",
+     "GET /settings shows 30"
+    ],
+    [
+     "the container",
+     "docker logs",
+     "every request and event line; nothing written under /app"
+    ]
+   ],
+   "done": [
+    "Volume, env-file, .dockerignore, stdout logging, README — each verified."
+   ],
+   "try": {
+    "screen": "runtime",
+    "do": "Run the container with the volume and the env-file and add a party or two. Under 'Restart the container' press Before restart, run the two commands shown, reload the page and press After restart.",
+    "see": "'unchanged': every party and its quoted minutes are still there — the database lives on the volume. Change DEFAULT_QUOTE_MINUTES in the env-file before the run: the rule book shows the new quote, no rebuild. Logs are on stdout (`docker logs`)."
+   }
+  }
+ ]
+}

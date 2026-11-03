@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TableTurn</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <h1>TableTurn</h1>
+    <p class="sub">A restaurant waitlist: parties quoted a wait, seated by size, tables turning over all evening.</p>
+    <nav id="nav">
+      <button data-screen="floor">The floor</button>
+      <button data-screen="waitlist">Waitlist</button>
+      <button data-screen="party">Party</button>
+      <button data-screen="rules">Rule book</button>
+      <button data-screen="api">API</button>
+      <button data-screen="runtime">Runtime</button>
+      <button id="walkbtn" class="walkbtn">Walkthrough</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<section id="walk" class="walk" hidden>
+  <div class="walkhead">
+    <span class="muted" id="walkpos"></span>
+    <span class="walknav"><button id="walkprev">← Previous</button><button id="walknext">Next →</button><button id="walkclose">Close</button></span>
+  </div>
+  <div class="walkid" id="walkid"></div>
+  <h2 id="walktitle"></h2>
+  <p class="scene" id="walkscene"></p>
+  <div class="walkus" id="walkus"></div>
+  <div class="walktry" id="walktry"></div>
+  <dl class="walkdl">
+    <dt>What you build</dt><dd id="walkbuild"></dd>
+    <dt>Why it follows</dt><dd id="walkfollows"></dd>
+  </dl>
+  <details class="walkdet"><summary>Backend contract — endpoints, storage and rules</summary><div id="walkcontract"></div></details>
+  <details class="walkdet" open><summary>Acceptance — as the end user sees it</summary><div id="walkacuser"></div></details>
+  <details class="walkdet"><summary>Acceptance — at the API and database</summary><div id="walkacapi"></div></details>
+  <details class="walkdet"><summary>Definition of done</summary><div id="walkdone"></div></details>
+</section>
+
+<section id="floor" class="screen">
+  <h2>The floor</h2>
+  <p class="muted">Twenty-two tables at Kothari's, Baner. Green is free, amber is seated, grey is uncleared — a table the party has left and Joseph has not wiped. State is derived from the seating on the table; nothing stores it. Click a free table to seat a party there; click a seated or uncleared table for Leave and Clear.</p>
+  <div class="row">
+    <select id="fsection"><option value="">All sections</option><option>Window</option><option>Garden</option><option>Indoor</option></select>
+    <select id="fstate"><option value="">Any state</option><option value="free">Free</option><option value="seated">Seated</option><option value="uncleared">Uncleared</option></select>
+    <span id="floorcount" class="muted"></span>
+  </div>
+  <div id="grid" class="grid"></div>
+  <div id="tableaction" class="card" hidden></div>
+</section>
+
+<section id="waitlist" class="screen">
+  <h2>Waitlist</h2>
+  <p class="muted">Meera adds a party by name and size. They get a number, a place in the queue and the wait they are quoted — the promise the whole project is judged on. The host seats them from the floor.</p>
+  <form id="joinform" class="card">
+    <b>Join the list</b>
+    <label>Name <input name="name" value="Kulkarni" maxlength="60" required></label>
+    <label>Covers <input name="covers" type="number" min="1" max="20" value="6" required></label>
+    <label>Phone (optional, E.164) <input name="phone" placeholder="+919876543210"></label>
+    <button type="submit">Add to the list</button>
+    <div id="joinok" class="card ok" hidden></div>
+    <div id="joinno" class="card no" hidden></div>
+  </form>
+</section>
+
+<section id="party" class="screen">
+  <h2>One party</h2>
+  <form id="partyform" class="row">
+    <label>Party id <input name="party_id" placeholder="W001"></label>
+    <button type="submit">Open</button>
+  </form>
+  <div id="partycard" class="card" hidden></div>
+</section>
+
+<section id="rules" class="screen">
+  <h2>Rule book</h2>
+  <p class="muted">The rules in force, as <code>GET /settings</code> answers them right now.</p>
+  <div class="card"><dl id="settings"></dl></div>
+  <h3>When the floor says no</h3>
+  <p class="muted">Every refusal the API documents, read from the live OpenAPI spec. One shape for all of them: <code>type, title, status, detail</code> plus the fields the ticket names.</p>
+  <table class="tbl" id="refusals"></table>
+  <h3>The rule table</h3>
+  <p class="muted">The rows of <code>tests/rules.csv</code>, which the test suite runs under each setting of <code>SMALL_PARTY_UPGRADE</code> (a test checks that this copy equals the file). Change the select to see which rows move — only the ones tagged <code>upgrade</code>.</p>
+  <div class="row"><label>A smaller party may take a larger table <select id="ruleupgrade"><option value="default">when nobody larger waits</option><option value="never">never</option><option value="always">always</option></select></label></div>
+  <table class="tbl" id="ruletable"></table>
+</section>
+
+<section id="api" class="screen">
+  <h2>API</h2>
+  <p class="muted">Every call, from the live OpenAPI spec. Send calls it with a sample body; the answer lands in the wire panel. Full docs at <a href="/docs">/docs</a>.</p>
+  <table class="tbl" id="endpoints"></table>
+</section>
+
+<section id="runtime" class="screen">
+  <h2>Runtime</h2>
+  <div class="card">
+    <p><span id="healthdot" class="dot"></span> <span id="healthtext">checking…</span></p>
+    <p class="muted" id="runtimeline"></p>
+  </div>
+  <h3>How it runs</h3>
+  <div class="card">
+    <p>The PC by the till runs the floor from one image; the kitchen screen reaches it on that PC's IP, port 8080. Data lives on a volume, settings come from the env-file, logs go to stdout.</p>
+<pre>docker build -t tableturn .
+docker run -d --name tableturn -p 8080:8080 -v tableturn-data:/data --env-file .env tableturn
+docker logs -f tableturn</pre>
+    <p>The image is built from the Dockerfile you write.</p>
+  </div>
+  <h3>Restart the container</h3>
+  <div class="card">
+    <p>This page cannot restart the container it is served from — you run the two commands. Press <b>Before restart</b>: the browser keeps a copy of every party on the list and the minutes each was quoted. Then run, in a terminal:</p>
+<pre>docker rm -f tableturn
+docker run -d --name tableturn -p 8080:8080 -v tableturn-data:/data --env-file .env tableturn</pre>
+    <p>Reload this page and press <b>After restart</b>: it reads every party again and says <i>unchanged</i> or names each difference. Change <code>DEFAULT_QUOTE_MINUTES</code> in the env-file before the <code>docker run</code> and the Rule book shows the new quote — no rebuild; the parties already on the list keep the quote they were given.</p>
+    <div class="row"><button type="button" id="beforebtn" class="btn">Before restart</button><button type="button" id="afterbtn" class="btn">After restart</button></div>
+    <div id="restartout" hidden></div>
+  </div>
+</section>
+
+<aside class="wire">
+  <h3>Last response on the wire</h3>
+  <pre id="wire">—</pre>
+</aside>
+
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>
