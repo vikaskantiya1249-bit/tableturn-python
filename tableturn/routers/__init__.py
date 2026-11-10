@@ -1,7 +1,12 @@
-"""API routers and database session dependency."""
+"""Shared router dependencies."""
 
-from fastapi import APIRouter, Request
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
+
+from ..clock import Clock, get_clock
+
 
 router = APIRouter()
 
@@ -13,6 +18,5 @@ def get_session(request: Request):
         yield session
 
 
-from .tables import router as tables_router
-
-router.include_router(tables_router)
+SessionDep = Annotated[Session, Depends(get_session)]
+ClockDep = Annotated[Clock, Depends(get_clock)]

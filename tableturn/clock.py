@@ -35,3 +35,8 @@ def get_clock() -> Clock:
 def as_utc(dt: datetime) -> datetime:
     """SQLite hands naive datetimes back; everything the app stores is UTC."""
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def minutes_between(start: datetime, end: datetime) -> int:
+    """Whole minutes from start to end."""
+    return int((as_utc(end) - as_utc(start)).total_seconds() // 60)

@@ -1,4 +1,8 @@
-"""Domain refusals and the error types. No FastAPI or Starlette import: services raise domain errors."""
+"""Domain refusals and error types.
+
+No FastAPI or Starlette imports.
+Services raise domain errors.
+"""
 
 
 class DomainError(Exception):
@@ -13,23 +17,95 @@ class DomainError(Exception):
 
 
 class NoSuchBranch(DomainError):
-    status, type, title = 404, "/errors/no-such-branch", "No such branch"
+    status = 404
+    type = "/errors/no-such-branch"
+    title = "No such branch"
 
 
 class NoSuchTable(DomainError):
-    status, type, title = 404, "/errors/no-such-table", "No such table"
+    status = 404
+    type = "/errors/no-such-table"
+    title = "No such table"
 
 
-# (status, type, title) of the errors the framework raises rather than a service: 400 for a query parameter that fails validation
-# ("filter values outside the enum are 400"), 404/405 for a path or
-# a method the app does not serve (every error is problem+json).
+class NoSuchParty(DomainError):
+    status = 404
+    type = "/errors/no-such-party"
+    title = "No such party"
 
-VALIDATION_BODY = (422, "/errors/validation", "The request body is not valid")
 
-VALIDATION_QUERY = (400, "/errors/validation", "Invalid filter value")
+class NoSuchSeating(DomainError):
+    status = 404
+    type = "/errors/no-such-seating"
+    title = "No such seating"
 
-NOT_FOUND = (404, "/errors/not-found", "No such resource")
 
-METHOD_NOT_ALLOWED = (405, "/errors/method-not-allowed", "Method not allowed")
+class PartyTooBig(DomainError):
+    status = 400
+    type = "/errors/party-too-big"
+    title = "No table here could seat that many"
+
+
+class TableTooSmall(DomainError):
+    status = 409
+    type = "/errors/table-too-small"
+    title = "Table too small"
+
+
+class AlreadySeated(DomainError):
+    status = 409
+    type = "/errors/already-seated"
+    title = "Already seated"
+
+
+class TableNotCleared(DomainError):
+    status = 409
+    type = "/errors/table-not-cleared"
+    title = "Table not cleared"
+
+
+class AlreadyLeft(DomainError):
+    status = 409
+    type = "/errors/already-left"
+    title = "The party has already left"
+
+
+class NotLeftYet(DomainError):
+    status = 409
+    type = "/errors/not-left-yet"
+    title = "The party has not left yet"
+
+
+class AlreadyCleared(DomainError):
+    status = 409
+    type = "/errors/already-cleared"
+    title = "The table has already been cleared"
+
+
+# Framework-generated errors.
+
+VALIDATION_BODY = (
+    422,
+    "/errors/validation",
+    "The request body is not valid",
+)
+
+VALIDATION_QUERY = (
+    400,
+    "/errors/validation",
+    "Invalid filter value",
+)
+
+NOT_FOUND = (
+    404,
+    "/errors/not-found",
+    "No such resource",
+)
+
+METHOD_NOT_ALLOWED = (
+    405,
+    "/errors/method-not-allowed",
+    "Method not allowed",
+)
 
 HTTP = "/errors/http"

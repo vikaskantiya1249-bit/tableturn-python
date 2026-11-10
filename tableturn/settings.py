@@ -10,11 +10,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
 
     database_url: str = Field(
-        default="sqlite:///./tableturn.db"
+        default="sqlite:///./tableturn_v2.db"
     )
 
     seed_dir: str = Field(
         default="seed"
+    )
+
+    default_quote_minutes: int = Field(
+        default=40,
+        ge=1,
     )
 
     model_config = SettingsConfigDict(

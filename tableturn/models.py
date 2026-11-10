@@ -1,6 +1,5 @@
-"""Tables. A dining table's state is derived from its
-current seating; there is deliberately no `state`
-column on tables."""
+"""Tables, parties and seating database models. A seating is a row; the current seating is a
+column on tables. Turn time and the real wait are stamped once and never recomputed."""
 
 from datetime import datetime
 
@@ -26,8 +25,67 @@ class DiningTable(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id"))
     no: Mapped[str] = mapped_column(String(8))
+    seats: Mapped[int] = mapped_column(Integer)
+    section: Mapped[str] = mapped_column(String(16))
 
-    seats: Mapped[int] = mapped_column(Integer)  # 2 | 4 | 6
-    section: Mapped[str] = mapped_column(String(16))  # Window | Garden | Indoor
-    current_seating_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    cleared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_seating_id: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    cleared_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
+class Party(Base):
+    __tablename__ = "parties"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id"))
+    name: Mapped[str] = mapped_column(String(60))
+    covers: Mapped[int] = mapped_column(Integer)
+    phone: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    state: Mapped[str] = mapped_column(String(12))
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    position: Mapped[int] = mapped_column(Integer)
+
+    quoted_minutes: Mapped[int] = mapped_column(Integer, default=40)
+    quoted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    # Actual wait stamped when the party is seated.
+    waited_minutes: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+
+class Seating(Base):
+    __tablename__ = "seatings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    party_id: Mapped[int] = mapped_column(
+        ForeignKey("parties.id"),
+        unique=True,
+    )
+
+    table_id: Mapped[int] = mapped_column(
+        ForeignKey("tables.id"),
+    )
+
+    seated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+    )
+
+    waited_minutes: Mapped[int] = mapped_column(Integer)
+
+    left_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    cleared_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    turn_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)     # seated_at → left_at

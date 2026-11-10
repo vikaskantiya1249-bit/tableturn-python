@@ -7,10 +7,10 @@ A restaurant waitlist: parties quoted a wait, seated by size, tables turning ove
 ## Progress
 
 - [x] Ticket 1 · The floor, as something you can look at
-- [ ] Ticket 2 · A party joins the list
-- [ ] Ticket 3 · The wait you quote, and the wait they actually have
-- [ ] Ticket 4 · Three ways to say no
-- [ ] Ticket 5 · The table turns
+- [x] Ticket 2 · A party joins the list
+- [x] Ticket 3 · The wait you quote, and the wait they actually have
+- [x] Ticket 4 · Three ways to say no
+- [x] Ticket 5 · The table turns
 - [ ] Ticket 6 · A board nobody can wipe
 - [ ] Ticket 7 · One file becomes an app
 - [ ] Ticket 8 · The rule table, and then the rule changes

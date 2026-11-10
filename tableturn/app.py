@@ -10,19 +10,19 @@ from .settings import Settings
 from .db import make_engine, init_db, make_sessionmaker
 from .services.seed import seed
 from .handlers import register_error_handlers
-from .routers import router
+from .routers import parties, seatings, tables, waitlist
 
 
-def create_app():
+def create_app(settings: Settings | None = None):
 
-    settings = Settings()
+    if settings is None:
+        settings = Settings()
 
     engine = make_engine(settings.database_url)
     session_factory = make_sessionmaker(engine)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-
         init_db(engine)
 
         with session_factory() as session:
@@ -36,8 +36,15 @@ def create_app():
 
     app.state.engine = engine
     app.state.session_factory = session_factory
+    app.state.settings = settings
 
-    app.include_router(router)
+    for api_router in (
+        tables.router,
+        waitlist.router,
+        seatings.router,
+        parties.router,
+    ):
+        app.include_router(api_router)
 
     register_error_handlers(app)
 

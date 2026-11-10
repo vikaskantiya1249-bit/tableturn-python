@@ -1,30 +1,69 @@
 """Table and floor API routes."""
 
-from typing import Annotated
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from fastapi import APIRouter
 
-from . import get_session
-from ..models import Branch, DiningTable
+from ..ids import party_public, seating_public
+from ..models import Party, Seating
 from ..schemas import FloorOut, TableOut, Section, TableState
-from ..errors import NoSuchBranch, NoSuchTable
+from ..services import tables
+from ..clock import Clock, as_utc
+from . import ClockDep, SessionDep
 
 
 router = APIRouter()
 
 
-SessionDep = Annotated[Session, Depends(get_session)]
-
-
-def get_table_state(table: DiningTable) -> TableState:
-    """Derive table state from its current seating."""
-
+def get_table_state(session, table) -> TableState:
     if table.current_seating_id is None:
         return "free"
 
+    seating = session.get(Seating, table.current_seating_id)
+
+    if seating is not None and seating.left_at is not None:
+        return "uncleared"
+
     return "seated"
+
+
+def table_output(session, table, clock):
+    state = get_table_state(session, table)
+
+    if state == "free":
+        return TableOut(
+            no=table.no,
+            seats=table.seats,
+            section=table.section,
+            state=state,
+        )
+
+    seating = session.get(Seating, table.current_seating_id)
+    party = session.get(Party, seating.party_id)
+
+    if state == "uncleared":
+        return TableOut(
+            no=table.no,
+            seats=table.seats,
+            section=table.section,
+            state=state,
+            party_id=party_public(party.id),
+            seating_id=seating_public(seating.id),
+        )
+
+    seated_minutes = int(
+        (as_utc(clock.now()) - as_utc(seating.seated_at)).total_seconds() // 60
+    )
+
+    return TableOut(
+        no=table.no,
+        seats=table.seats,
+        section=table.section,
+        state=state,
+        party_id=party_public(party.id),
+        seating_id=seating_public(seating.id),
+        seated_minutes=seated_minutes,
+    )
 
 
 @router.get(
@@ -35,51 +74,30 @@ def get_table_state(table: DiningTable) -> TableState:
 def get_floor(
     branch: str,
     session: SessionDep,
+    clock: ClockDep,
     section: Section | None = None,
     state: TableState | None = None,
 ):
-    branch_obj = session.scalar(
-        select(Branch).where(Branch.code == branch)
-    )
+    branch_obj = tables.get_branch(session, branch)
 
-    if branch_obj is None:
-        raise NoSuchBranch("No such branch")
-
-    query = (
-        select(DiningTable)
-        .where(DiningTable.branch_id == branch_obj.id)
-        .order_by(DiningTable.no)
-    )
-
-    if section is not None:
-        query = query.where(DiningTable.section == section)
-
-    tables = session.scalars(query).all()
+    all_tables = tables.get_tables(session, branch_obj)
 
     result = []
 
-    for table in tables:
-        table_state = get_table_state(table)
+    for table in all_tables:
+        body = table_output(session, table, clock)
 
-        if state is not None and table_state != state:
+        if section is not None and table.section != section:
             continue
 
-        result.append(
-            TableOut(
-                no=table.no,
-                seats=table.seats,
-                section=table.section,
-                state=table_state,
-            )
-        )
+        if state is not None and body.state != state:
+            continue
 
-    free_count = sum(
-        1 for table in result if table.state == "free"
-    )
+        result.append(body)
 
     return FloorOut(
         branch=branch_obj.code,
-        free=free_count,
+        free=sum(1 for table in result if table.state == "free"),
         tables=result,
     )
 
@@ -93,27 +111,9 @@ def get_one_table(
     branch: str,
     no: str,
     session: SessionDep,
+    clock: ClockDep,
 ):
-    branch_obj = session.scalar(
-        select(Branch).where(Branch.code == branch)
-    )
+    branch_obj = tables.get_branch(session, branch)
+    table = tables.get_table(session, branch_obj, no)
 
-    if branch_obj is None:
-        raise NoSuchBranch("No such branch")
-
-    table = session.scalar(
-        select(DiningTable).where(
-            DiningTable.branch_id == branch_obj.id,
-            DiningTable.no == no,
-        )
-    )
-
-    if table is None:
-        raise NoSuchTable("No such table")
-
-    return TableOut(
-        no=table.no,
-        seats=table.seats,
-        section=table.section,
-        state=get_table_state(table),
-    )
+    return table_output(session, table, clock)

@@ -1,2 +1,49 @@
-"""The floor. A table's state is derived on read from its current seating — `seated` while the party is at
-it, `uncleared` once they have left and nobody has wiped it, `free` otherwise. There is no stored state flag."""
+"""Table and branch lookup services."""
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from ..models import Branch, DiningTable
+from ..errors import NoSuchBranch, NoSuchTable
+
+
+def get_branch(session: Session, branch_code: str) -> Branch:
+    branch = session.scalar(
+        select(Branch).where(Branch.code == branch_code)
+    )
+
+    if branch is None:
+        raise NoSuchBranch("No such branch")
+
+    return branch
+
+
+def get_tables(
+    session: Session,
+    branch: Branch,
+) -> list[DiningTable]:
+    return list(
+        session.scalars(
+            select(DiningTable)
+            .where(DiningTable.branch_id == branch.id)
+            .order_by(DiningTable.no)
+        ).all()
+    )
+
+
+def get_table(
+    session: Session,
+    branch: Branch,
+    table_no: str,
+) -> DiningTable:
+    table = session.scalar(
+        select(DiningTable).where(
+            DiningTable.branch_id == branch.id,
+            DiningTable.no == table_no,
+        )
+    )
+
+    if table is None:
+        raise NoSuchTable("No such table")
+
+    return table
