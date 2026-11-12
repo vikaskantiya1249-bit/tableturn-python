@@ -1,6 +1,7 @@
 """Shared fixtures for TableTurn tests."""
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +9,8 @@ from fastapi.testclient import TestClient
 from tableturn.app import create_app
 from tableturn.clock import FixedClock, get_clock
 from tableturn.settings import Settings
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def make_settings(tmp_path, **overrides):
@@ -69,6 +72,6 @@ def seat(client, party_id: str, table: str):
 def seated(client, covers: int = 6, table: str = "T20") -> dict:
     """join + seat, returning the seating body."""
     party = join(client, covers)
-    r = seat(client, party["party_id"], table)
+    r = seat(client, party["party_id"], "T20" if table is None else table)
     assert r.status_code == 201, r.text
     return r.json()

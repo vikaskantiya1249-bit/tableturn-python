@@ -1,6 +1,6 @@
 """Application settings.
-Nothing is hard-coded.
-Every field has a default; the environment can change it.
+Nothing is hard-coded; an env-file can feed it.
+Every field here is listed in .env.example.
 """
 
 from typing import Literal
