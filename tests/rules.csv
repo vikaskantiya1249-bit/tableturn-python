@@ -1,0 +1,11 @@
+case,tag,setup,action,status_default,type_default,status_never,type_never,status_always,type_always
+fits,seat,join 6,seat T20,201,,201,,201,
+too_small,seat,join 6,seat T11,409,/errors/table-too-small,409,/errors/table-too-small,409,/errors/table-too-small
+already_seated,seat,join 2;seat T01,seat T02,409,/errors/already-seated,409,/errors/already-seated,409,/errors/already-seated
+not_cleared,seat,join 2;seat T01;leave;join 2,seat T01,409,/errors/table-not-cleared,409,/errors/table-not-cleared,409,/errors/table-not-cleared
+party_too_big,join,,join 9,400,/errors/party-too-big,400,/errors/party-too-big,400,/errors/party-too-big
+malformed,join,,join 0,422,/errors/validation,422,/errors/validation,422,/errors/validation
+unknown_party,seat,,seat W999 T20,404,/errors/no-such-party,404,/errors/no-such-party,404,/errors/no-such-party
+unknown_table,seat,join 2,seat T99,404,/errors/no-such-table,404,/errors/no-such-table,404,/errors/no-such-table
+two_at_four_top_nobody_larger,upgrade,join 2,seat T11,201,,409,/errors/overtaking,201,
+two_at_four_top_four_waiting,upgrade,join 4;join 2,seat T11,409,/errors/overtaking,409,/errors/overtaking,201,

@@ -1,52 +1,98 @@
-"""A party joins the list. Position is computed at insert."""
-from sqlalchemy import func, select
-from tableturn.models import Party
-def test_nine_covers_is_party_too_big_and_writes_no_row(client, db):
-    r = client.post("/waitlist", json={"name": "Big", "covers": 9})
-    assert r.status_code == 400
+"""A party joins the list. Position is computed at insert; the quote is stamped from the clock; the join
+and the quote are written as events in the same transaction."""
 
-    body = r.json()
-    assert body["type"] == "/errors/party-too-big" and body["max_covers"] == 6
+from sqlalchemy import select, func
+from sqlalchemy.orm import Session
 
-    with db() as s:
-        assert s.scalar(select(func.count()).select_from(Party)) == 0
-
-
-def test_malformed_bodies_are_422_naming_the_field(client):
-    for body, field in (
-        ({"name": "", "covers": 2}, "name"),
-        ({"name": "Rao", "covers": 0}, "covers"),
-        ({"name": "Rao", "covers": 21}, "covers"),
-        ({"name": "Rao", "covers": 2, "phone": "98765"}, "phone"),
-        ({"covers": 2}, "name"),
-    ):
-        r = client.post("/waitlist", json=body)
-        assert r.status_code == 422, body
-        assert (
-            r.json()["type"] == "/errors/validation"
-            and field in {e["field"] for e in r.json()["errors"]}
-        ), body
+from ..models import Branch, Party, DiningTable, Seating
+from ..errors import NoSuchBranch, PartyTooBig, NoSuchParty
+from ..clock import Clock
+from ..ids import decode_party_id
+from . import events
 
 
-def test_read_one_party_and_the_404(client):
-    party = join(client, 6)
-    r = client.get(f"/parties/{party['party_id']}")
+def join_party(
+    session: Session,
+    name: str,
+    covers: int,
+    phone: str | None,
+    clock: Clock,
+    default_quote_minutes: int = 40,
+    branch_code: str = "Baner",
+) -> Party:
 
-    assert r.status_code == 200
-
-    body = r.json()
-    assert (
-        body["state"] == "waiting"
-        and body["position"] == 1
-        and body["covers"] == 6
+    branch = session.scalar(
+        select(Branch).where(Branch.code == branch_code)
     )
 
-    assert (
-        "table" not in body and "waited_minutes" not in body
-    ), "a waiting party has no table and no real wait yet"
+    if branch is None:
+        raise NoSuchBranch("No such branch")
 
-    r = client.get("/parties/W999")
-    assert (
-        r.status_code == 404
-        and r.json()["type"] == "/errors/no-such-party"
+    max_covers = session.scalar(
+        select(func.max(DiningTable.seats)).where(
+            DiningTable.branch_id == branch.id
+        )
+    ) or 0
+
+    if covers > max_covers:
+        raise PartyTooBig(
+            "No table can seat this many people",
+            max_covers=max_covers,
+        )
+
+    waiting_count = session.scalar(
+        select(func.count()).select_from(Party).where(
+            Party.branch_id == branch.id,
+            Party.state == "waiting",
+        )
+    ) or 0
+
+    now = clock.now()
+
+    party = Party(
+        branch_id=branch.id,
+        name=name,
+        covers=covers,
+        phone=phone,
+        state="waiting",
+        joined_at=now,
+        position=waiting_count + 1,
+        quoted_minutes=default_quote_minutes,
+        quoted_at=now,
     )
+
+    session.add(party)
+    session.flush()
+
+    events.record(session, branch, party.id, "joined", now, {"covers": covers})
+    events.record(session, branch, party.id, "quoted", now, {"quoted_minutes": party.quoted_minutes})
+
+    session.commit()
+    session.refresh(party)
+
+    return party
+
+
+def get_party_details(session: Session, public_id: str):
+    """Get a party and its seating details."""
+
+    party_id = decode_party_id(public_id)
+
+    party = None
+
+    if party_id is not None:
+        party = session.get(Party, party_id)
+
+    if party is None:
+        raise NoSuchParty("No such party")
+
+    seating = session.scalar(
+        select(Seating).where(Seating.party_id == party.id)
+    )
+
+    table = None
+
+    if seating is not None:
+        table = session.get(DiningTable, seating.table_id)
+
+    return party, seating, table

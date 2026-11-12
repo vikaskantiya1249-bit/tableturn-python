@@ -1,4 +1,4 @@
-"""Party waitlist business rules."""
+"""Party waitlist business rules. The join and the quote are written as events in the same transaction."""
 
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -7,6 +7,7 @@ from ..models import Branch, Party, DiningTable, Seating
 from ..errors import NoSuchBranch, PartyTooBig, NoSuchParty
 from ..clock import Clock
 from ..ids import decode_party_id
+from . import events
 
 
 def join_party(
@@ -60,6 +61,11 @@ def join_party(
     )
 
     session.add(party)
+    session.flush()
+
+    events.record(session, branch, party.id, "joined", now, {"covers": covers})
+    events.record(session, branch, party.id, "quoted", now, {"quoted_minutes": party.quoted_minutes})
+
     session.commit()
     session.refresh(party)
 

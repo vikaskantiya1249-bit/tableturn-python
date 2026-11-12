@@ -64,6 +64,13 @@ class TableNotCleared(DomainError):
     title = "Table not cleared"
 
 
+class Overtaking(DomainError):
+    """A smaller party may not take a larger table ahead of a larger party the table would fit."""
+    status = 409
+    type = "/errors/overtaking"
+    title = "A larger party waiting must be seated first"
+
+
 class AlreadyLeft(DomainError):
     status = 409
     type = "/errors/already-left"
@@ -82,7 +89,8 @@ class AlreadyCleared(DomainError):
     title = "The table has already been cleared"
 
 
-# Framework-generated errors.
+# Framework-generated errors: a body or filter that fails validation, a path or
+# a method the app does not serve (every error is problem+json), and the one 500 for anything unexpected.
 
 VALIDATION_BODY = (
     422,
@@ -94,6 +102,12 @@ VALIDATION_QUERY = (
     400,
     "/errors/validation",
     "Invalid filter value",
+)
+
+INTERNAL = (
+    500,
+    "/errors/internal",
+    "Something went wrong",
 )
 
 NOT_FOUND = (

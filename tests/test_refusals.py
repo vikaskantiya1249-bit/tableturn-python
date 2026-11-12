@@ -47,6 +47,16 @@ def test_an_occupied_table_is_refused_the_same_way(client):
     assert r.json()["type"] == "/errors/table-not-cleared"
 
 
+def test_table_not_cleared_after_the_party_left(client):
+    s = seated(client, 2, "T01")
+    assert client.post(f"/seatings/{s['seating_id']}/leave").status_code == 200
+
+    party = join(client, 2)
+    r = seat(client, party["party_id"], "T01")
+
+    assert r.status_code == 409 and r.json()["type"] == "/errors/table-not-cleared"
+
+
 def test_the_404s_and_the_order_of_checks(client):
     """The first failing business rule determines the response."""
 
@@ -70,6 +80,14 @@ def test_the_404s_and_the_order_of_checks(client):
     assert r.status_code == 409
     assert r.json()["type"] == "/errors/already-seated"
 
+    four = seated(client, 4, "T12")
+    assert client.post(f"/seatings/{four['seating_id']}/leave").status_code == 200
+
+    six = join(client, 6)
+    r = seat(client, six["party_id"], "T12")  # not cleared AND too small: not-cleared wins
+    assert r.status_code == 409
+    assert r.json()["type"] == "/errors/table-not-cleared"
+
 
 def _too_small(client):
     return seat(client, join(client, 6)["party_id"], "T11"), set()
@@ -82,10 +100,15 @@ def _too_big(client):
     ), {"max_covers"}
 
 
+def _overtaking(client):
+    join(client, 4)
+    return seat(client, join(client, 2)["party_id"], "T11"), {"must_seat_first"}
+
+
 @pytest.mark.parametrize(
     "make",
-    [_too_small, _too_big],
-    ids=["table-too-small", "party-too-big"],
+    [_too_small, _too_big, _overtaking],
+    ids=["table-too-small", "party-too-big", "overtaking"],
 )
 def test_refusal_body_has_exactly_the_documented_shape(client, make):
     """Error responses contain exactly the documented fields."""

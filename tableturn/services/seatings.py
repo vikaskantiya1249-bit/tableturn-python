@@ -1,5 +1,5 @@
 """Seat a party, let it leave, clear the table. Every refusal is raised here, never in a route; every
-change is one transaction."""
+change and its event are one transaction."""
 """Seating business rules."""
 
 from sqlalchemy import select
@@ -13,11 +13,14 @@ from ..errors import (
     NoSuchParty,
     NoSuchSeating,
     NotLeftYet,
+    Overtaking,
     TableNotCleared,
     TableTooSmall,
 )
-from ..ids import decode_party_id, seating_internal
+from ..ids import decode_party_id, party_public, seating_internal
 from ..models import Branch, DiningTable, Party, Seating
+from ..settings import Settings
+from . import events
 from .tables import get_table
 
 
@@ -36,12 +39,45 @@ def _seating(session: Session, branch: Branch, public_id: str) -> Seating:
     return seating
 
 
+def check_upgrade(session: Session, party: Party, table: DiningTable, settings: Settings) -> None:
+    """A party may take a table with more seats than covers only as the setting allows — by default, only
+    when no waiting party with more covers than this one could be seated at that table."""
+    if table.seats <= party.covers or settings.small_party_upgrade == "always":
+        return
+
+    if settings.small_party_upgrade == "never":
+        raise Overtaking(
+            f"{party_public(party.id)} ({party.covers}) may not take {table.no} ({table.seats} seats): "
+            f"smaller parties never take a larger table"
+        )
+
+    larger = session.scalar(
+        select(Party)
+        .where(
+            Party.branch_id == party.branch_id,
+            Party.state == "waiting",
+            Party.id != party.id,
+            Party.covers > party.covers,
+            Party.covers <= table.seats,
+        )
+        .order_by(Party.joined_at, Party.id)
+        .limit(1)
+    )
+
+    if larger is not None:
+        raise Overtaking(
+            f"{party_public(larger.id)} ({larger.covers}) is waiting and fits {table.no}; seat them first",
+            must_seat_first=party_public(larger.id),
+        )
+
+
 def seat(
     session: Session,
     branch: Branch,
     party_public_id: str,
     table_no: str,
     clock: Clock,
+    settings: Settings,
 ) -> Seating:
 
     # 1. Party must exist.
@@ -66,13 +102,14 @@ def seat(
     if party.state == "seated":
         raise AlreadySeated("Party is already seated")
 
-    # 4. Table must be cleared and available.
+    # 4. Table must be cleared, fit the party, then the fairness rule.
     if table.current_seating_id is not None:
         raise TableNotCleared("Table has not been cleared")
 
-    # 5. Table must fit the party.
     if table.seats < party.covers:
         raise TableTooSmall("Table cannot seat this party")
+
+    check_upgrade(session, party, table, settings)
 
     # Stamp the actual wait at seating time.
     now = as_utc(clock.now())
@@ -95,6 +132,8 @@ def seat(
     table.current_seating_id = seating.id
     party.state = "seated"
     party.waited_minutes = waited_minutes
+
+    events.record(session, branch, party.id, "seated", now, {"table": table.no, "waited_minutes": party.waited_minutes}, seating_id=seating.id)
 
     session.commit()
     session.refresh(seating)
@@ -121,6 +160,8 @@ def leave(
     party = session.get(Party, seating.party_id)
     party.state = "left"
 
+    events.record(session, branch, seating.party_id, "left", now, seating_id=seating.id)
+
     session.commit()
     return seating
 
@@ -146,7 +187,7 @@ def clear(
     now = clock.now()
     table = session.get(DiningTable, seating.table_id)
 
-    # One transaction — the seating, the table and the party.
+    # One transaction — the seating, the table and the party, and the event that records it.
     seating.cleared_at = now
     seating.turn_minutes = minutes_between(seating.seated_at, seating.left_at)   # what the table earned, not what the server took
 
@@ -155,6 +196,8 @@ def clear(
 
     party = session.get(Party, seating.party_id)
     party.state = "cleared"
+
+    events.record(session, branch, seating.party_id, "cleared", now, {"turn_minutes": seating.turn_minutes}, seating_id=seating.id)
 
     session.commit()
     return seating, table

@@ -1,9 +1,9 @@
 """Table and floor API routes."""
 
-from datetime import datetime, timezone
-
 from fastapi import APIRouter
 
+from ..errors import NoSuchBranch, NoSuchTable
+from ..handlers import FILTER_RESPONSE, responses
 from ..ids import party_public, seating_public
 from ..models import Party, Seating
 from ..schemas import FloorOut, TableOut, Section, TableState
@@ -12,7 +12,9 @@ from ..clock import Clock, as_utc
 from . import ClockDep, SessionDep
 
 
-router = APIRouter()
+router = APIRouter(tags=["tables"])
+
+NO_BRANCH = (NoSuchBranch, "There is no branch 'Aundh'")
 
 
 def get_table_state(session, table) -> TableState:
@@ -70,6 +72,8 @@ def table_output(session, table, clock):
     "/branches/{branch}/tables",
     response_model=FloorOut,
     response_model_exclude_none=True,
+    summary="The floor: every table with its derived state",
+    responses={**responses(NO_BRANCH), **FILTER_RESPONSE},
 )
 def get_floor(
     branch: str,
@@ -106,6 +110,8 @@ def get_floor(
     "/branches/{branch}/tables/{no}",
     response_model=TableOut,
     response_model_exclude_none=True,
+    summary="One table",
+    responses=responses(NO_BRANCH, (NoSuchTable, "There is no table 'T99' in branch Baner")),
 )
 def get_one_table(
     branch: str,

@@ -12,9 +12,8 @@ from tableturn.settings import Settings
 
 def make_settings(tmp_path, **overrides):
     values = {
-        "database_url": f"sqlite:///{tmp_path / 'test.db'}",
-        "seed_dir": "seed",
-    }
+        "database_url": f"sqlite:///{tmp_path / 'test.db'}", "default_quote_minutes": 40,
+        "small_party_upgrade": "when_nobody_larger_waits", "seed_dir": "seed"}
     values.update(overrides)
     return Settings(**values)
 
@@ -35,7 +34,7 @@ def app(tmp_path):
 def client(app, clock):
     app.dependency_overrides[get_clock] = lambda: clock
 
-    with TestClient(app) as test_client:
+    with TestClient(app, raise_server_exceptions=False) as test_client:
         yield test_client
 
 
@@ -44,14 +43,15 @@ def db(app):
     yield app.state.session_factory
 
 
-def join(client, covers=2):
-    r = client.post(
-        "/waitlist",
-        json={
-            "name": "Rao",
-            "covers": covers,
-        },
-    )
+def join(client, covers=2, phone=None):
+    body = {
+        "name": "Rao",
+        "covers": covers,
+    }
+    if phone is not None:
+        body["phone"] = phone
+
+    r = client.post("/waitlist", json=body)
     assert r.status_code == 201, r.text
     return r.json()
 

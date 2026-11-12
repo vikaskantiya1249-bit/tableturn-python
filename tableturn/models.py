@@ -3,7 +3,7 @@ column on tables. Turn time and the real wait are stamped once and never recompu
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -89,3 +89,19 @@ class Seating(Base):
         nullable=True,
     )
     turn_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)     # seated_at → left_at
+
+
+class Event(Base):
+    """One row per transition, written in the same transaction as the change. Insert only: services/events.py
+    writes it with a Core INSERT and this class is used for reads, so no code path updates a row; the database
+    triggers in db.py refuse UPDATE and DELETE outright."""
+
+    __tablename__ = "events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id"))
+    party_id: Mapped[int] = mapped_column(ForeignKey("parties.id"))
+    seating_id: Mapped[int | None] = mapped_column(ForeignKey("seatings.id"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(16))                      # joined | quoted | seated | left | cleared
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    data: Mapped[str] = mapped_column(Text, default="{}")              # JSON: ids and facts, never the guest's phone

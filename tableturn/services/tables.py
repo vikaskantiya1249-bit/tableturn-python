@@ -1,6 +1,6 @@
 """Table and branch lookup services."""
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..models import Branch, DiningTable
@@ -47,3 +47,11 @@ def get_table(
         raise NoSuchTable("No such table")
 
     return table
+
+
+def max_covers(session: Session, branch_id: int) -> int:
+    return session.scalar(
+        select(func.max(DiningTable.seats)).where(
+            DiningTable.branch_id == branch_id
+        )
+    ) or 0
